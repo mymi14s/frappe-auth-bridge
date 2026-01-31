@@ -256,8 +256,7 @@ class FrappeAuthBridge:
             client = FrappeClient(frappe_url)
             client.authenticate(api_key, api_secret)
 
-            user_data = client.get_api("frappe.auth.get_logged_user")
-            username = user_data.get("message", "Administrator")
+            username = client.get_api("frappe.auth.get_logged_user")
 
             user_doc = client.get_doc("User", username)
             roles = self._fetch_user_roles(client, username)
@@ -289,7 +288,9 @@ class FrappeAuthBridge:
                 "api_secret": api_secret,
                 "tenant_id": tenant_id,
             }
-            self._client = client
+            self._client = self.get_client(
+                api_key=api_key, api_secret=api_secret, tenant_id=tenant_id
+            )
 
             if self.audit_logger:
                 self.audit_logger.login_success(

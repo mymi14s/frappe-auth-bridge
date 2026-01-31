@@ -74,6 +74,9 @@ jobs:
       id-token: write
 
     steps:
+      - id: checkout
+        uses: actions/checkout@v4
+
       - id: download-artifacts
         name: Download distribution artifacts
         uses: actions/download-artifact@v4
@@ -92,7 +95,7 @@ jobs:
       - id: get-version
         name: Extract version from pyproject.toml
         run: |
-          VERSION=$(grep '^version' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          VERSION=$(python3 -c "import re; print(re.search(r'^version\s*=\s*\"([^\"]+)\"', open('pyproject.toml').read(), re.M).group(1))")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - id: create-release
@@ -100,7 +103,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "v${{ steps.get-version.outputs.version }}" --title "frappe-auth-bridge_${{ steps.get-version.outputs.version }}" --repo "${{ github.repository }}" --notes ""
+          gh release create "v${{ steps.get-version.outputs.version }}" --title "v${{ steps.get-version.outputs.version }}" --repo "${{ github.repository }}" --notes "Release v${{ steps.get-version.outputs.version }}" || echo "Release already exists"
 
       - id: upload-to-release
         name: Upload artifacts to GitHub Release
