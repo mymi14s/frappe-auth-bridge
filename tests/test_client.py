@@ -11,6 +11,14 @@ def test_client_after_login():
     with patch('frappe_auth_bridge.core.FrappeClient') as MockClient:
         mock_client = Mock()
         mock_client.sid = "test_session_token"
+        
+        # Mock requests session and cookies
+        mock_session = Mock()
+        mock_session.cookies = Mock()
+        mock_session.cookies.get.return_value = "test_session_token"
+        mock_client.session = mock_session
+        mock_client.headers = {}
+        
         mock_client.get_doc.return_value = {
             'email': 'test@example.com',
             'name': 'test@example.com',

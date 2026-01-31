@@ -3,7 +3,6 @@
 import os
 from frappe_auth_bridge import FrappeAuthBridge
 
-# Initialize
 FRAPPE_URL = os.getenv("FRAPPE_URL", "https://example.erpnext.com")
 auth = FrappeAuthBridge(frappe_url=FRAPPE_URL)
 

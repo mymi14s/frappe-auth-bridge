@@ -4,9 +4,15 @@ import json
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 from typing import Dict, Optional
+import os
+from pathlib import Path
 from frappe_auth_bridge.models import Session
 from frappe_auth_bridge.security import EncryptionManager
-from frappe_auth_bridge.exceptions import SessionExpiredError, InvalidTokenError
+from frappe_auth_bridge.exceptions import (
+    SessionExpiredError, 
+    InvalidTokenError,
+    AuthenticationError
+)
 
 
 class SessionStore(ABC):
@@ -157,3 +163,52 @@ class RedisSessionStore(SessionStore):
         """Check if session exists in Redis."""
         key = self._key(session_id)
         return self._redis.exists(key) > 0
+
+
+class FileSessionStore(SessionStore):
+    """File-based session storage backend."""
+    
+    def __init__(self, encryption_manager: EncryptionManager, ttl_seconds: int = 3600, 
+                 storage_path: str = "/tmp/frappe_auth_sessions"):
+        super().__init__(encryption_manager, ttl_seconds)
+        self.storage_path = Path(storage_path)
+        self.storage_path.mkdir(parents=True, exist_ok=True)
+    
+    def _file_path(self, session_id: str) -> Path:
+        """Get file path for session ID."""
+        return self.storage_path / f"session_{session_id}.json"
+    
+    def save(self, session: Session) -> None:
+        """Save session to file."""
+        encrypted = self._encrypt_session(session)
+        file_path = self._file_path(session.session_id)
+        file_path.write_text(encrypted)
+    
+    def get(self, session_id: str) -> Optional[Session]:
+        """Get session from file."""
+        file_path = self._file_path(session_id)
+        if file_path.exists():
+            try:
+                encrypted = file_path.read_text()
+                return self._decrypt_session(encrypted)
+            except SessionExpiredError:
+                self.delete(session_id)
+                raise
+            except Exception:
+                self.delete(session_id)
+                return None
+        return None
+    
+    def delete(self, session_id: str) -> None:
+        """Delete session file."""
+        file_path = self._file_path(session_id)
+        file_path.unlink(missing_ok=True)
+    
+    def exists(self, session_id: str) -> bool:
+        """Check if session file exists."""
+        return self._file_path(session_id).exists()
+    
+    def clear_all(self) -> None:
+        """Clear all session files."""
+        for f in self.storage_path.glob("session_*.json"):
+            f.unlink()

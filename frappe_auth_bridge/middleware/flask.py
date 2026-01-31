@@ -37,8 +37,13 @@ class FrappeAuthMiddleware:
     
     def before_request(self):
         """Process request before handling."""
-        if any(request.path.startswith(path) for path in self.exempt_paths):
-            return
+        # Use exact match for '/' to prevent matching everything
+        # Use startswith for other paths to allow sub-paths (like /static/)
+        for path in self.exempt_paths:
+            if path == '/' and request.path == '/':
+                return
+            if path != '/' and request.path.startswith(path):
+                return
         
         auth_bridge = self.auth_bridge or getattr(current_app, 'frappe_auth_bridge', None)
         if not auth_bridge:

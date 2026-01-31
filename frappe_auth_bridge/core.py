@@ -50,10 +50,15 @@ class FrappeAuthBridge:
         
         self.encryption = EncryptionManager(encryption_key)
         
-        self.session_store = session_store or MemorySessionStore(
-            encryption_manager=self.encryption,
-            ttl_seconds=session_ttl_seconds
-        )
+        if session_store:
+            self.session_store = session_store
+            if not getattr(self.session_store, 'encryption', None):
+                self.session_store.encryption = self.encryption
+        else:
+            self.session_store = MemorySessionStore(
+                encryption_manager=self.encryption,
+                ttl_seconds=session_ttl_seconds
+            )
         
         self.permission_cache = PermissionCache(ttl=session_ttl_seconds)
         
@@ -149,7 +154,17 @@ class FrappeAuthBridge:
             session_id = generate_secure_token(16)
             expires_at = datetime.utcnow() + timedelta(seconds=self.session_ttl_seconds)
             
-            session_token = getattr(client, 'sid', generate_secure_token(32))
+            session_token = client.session.cookies.get('sid', path='/')
+            if not session_token:
+                session_token = client.session.cookies.get('sid')
+            
+            if not session_token:
+                session_token = getattr(client, 'sid', None)
+            
+            if not session_token:
+                session_token = generate_secure_token(32)
+                if self.audit_logger:
+                    self.audit_logger.warning(f"Could not extract real sid for user {username}, using fallback token")
             
             session = Session(
                 session_id=session_id,
@@ -172,7 +187,7 @@ class FrappeAuthBridge:
                 'password': password,
                 'tenant_id': tenant_id
             }
-            self._client = client  # Store the authenticated client
+            self._client = client 
             
             return session
             
@@ -199,9 +214,6 @@ class FrappeAuthBridge:
             SessionExpiredError: If session is expired
             AuthenticationError: If session is invalid
         """
-        # Find session by token (iterate through sessions)
-        # Note: In production, you'd want to index sessions by token
-        # For now, we'll use a simple approach
         try:
             session = self._find_session_by_token(session_token)
             if not session:
@@ -219,9 +231,6 @@ class FrappeAuthBridge:
     
     def _find_session_by_token(self, token: str) -> Optional[Session]:
         """Find session by token (helper method)."""
-        # This is a limitation of the current design - we'd need to maintain
-        # a separate index for token->session_id mapping in production
-        # For now, this is a placeholder
         raise NotImplementedError(
             "Token-based session lookup requires additional indexing. "
             "Use session_id-based lookup or implement token indexing."
@@ -283,7 +292,7 @@ class FrappeAuthBridge:
                 'api_secret': api_secret,
                 'tenant_id': tenant_id
             }
-            self._client = client  # Store the authenticated client
+            self._client = client
             
             if self.audit_logger:
                 self.audit_logger.login_success(
@@ -364,8 +373,6 @@ class FrappeAuthBridge:
             if cached_roles is not None:
                 return cached_roles
         
-        # Fetch from Frappe (requires active client - placeholder)
-        # In real implementation, you'd need to maintain a client connection
         return []
     
     def get_user_permissions(
@@ -470,7 +477,11 @@ class FrappeAuthBridge:
                 raise AuthenticationError("Invalid session")
             
             if hasattr(client, 'session'):
-                client.session.cookies.set('sid', session.token)
+                from urllib.parse import urlparse
+                hostname = urlparse(frappe_url).hostname
+                client.session.cookies.set('sid', session.token, domain=hostname, path='/')
+                client.session.headers['Cookie'] = f"sid={session.token}"
+            client.sid = session.token
             
         elif username and password:
             client.login(username, password)
