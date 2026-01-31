@@ -1,9 +1,12 @@
 """Flask example application using frappe-auth-bridge."""
 
 import os
-from flask import Flask, request, jsonify, g
+
+from flask import Flask, g, jsonify, request
+
 from frappe_auth_bridge import FrappeAuthBridge
-from frappe_auth_bridge.middleware.flask import FrappeAuthMiddleware, auth_required
+from frappe_auth_bridge.middleware.flask import (FrappeAuthMiddleware,
+                                                 auth_required)
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -22,42 +25,38 @@ middleware = FrappeAuthMiddleware(
     app=app,
     auth_bridge=auth_bridge,
     session_cookie_name="frappe_session",
-    exempt_paths=["/", "/login", "/logout", "/health"]
+    exempt_paths=["/", "/login", "/logout", "/health"],
 )
 
 
 @app.route("/")
 def index():
     """Health check endpoint."""
-    return jsonify({
-        "status": "ok",
-        "message": "Frappe Auth Bridge Flask Example"
-    })
+    return jsonify({"status": "ok", "message": "Frappe Auth Bridge Flask Example"})
 
 
 @app.route("/login", methods=["POST"])
 def login():
     """Login endpoint - authenticate with username and password."""
     data = request.get_json()
-    
-    if not data or 'username' not in data or 'password' not in data:
+
+    if not data or "username" not in data or "password" not in data:
         return jsonify({"error": "Username and password required"}), 400
-    
+
     try:
         # Authenticate with Frappe
-        session = auth_bridge.login_with_password(
-            data['username'],
-            data['password']
-        )
-        
+        session = auth_bridge.login_with_password(data["username"], data["password"])
+
         # Create response
-        response = jsonify({
-            "session_id": session.session_id,
-            "token": session.token,
-            "user_email": session.user.email,
-            "roles": session.user.roles,
-        })
-        
+        response = jsonify(
+            {
+                "session_id": session.session_id,
+                "token": session.token,
+                "user_email": session.user.email,
+                "roles": session.user.roles,
+            }
+        )
+
         # Set session cookie
         response.set_cookie(
             "frappe_session",
@@ -67,9 +66,9 @@ def login():
             samesite="Strict",
             max_age=3600,
         )
-        
+
         return response
-        
+
     except Exception as e:
         return jsonify({"error": f"Authentication failed: {str(e)}"}), 401
 
@@ -78,16 +77,16 @@ def login():
 def logout():
     """Logout endpoint - invalidate session."""
     session_id = request.cookies.get("frappe_session")
-    
+
     if session_id:
         try:
             auth_bridge.logout(session_id)
         except Exception:
             pass
-    
+
     response = jsonify({"message": "Logged out successfully"})
     response.delete_cookie("frappe_session")
-    
+
     return response
 
 
@@ -96,12 +95,14 @@ def logout():
 def get_current_user():
     """Get current authenticated user."""
     user = g.user
-    return jsonify({
-        "email": user.email,
-        "name": user.name,
-        "full_name": user.full_name,
-        "roles": user.roles,
-    })
+    return jsonify(
+        {
+            "email": user.email,
+            "name": user.name,
+            "full_name": user.full_name,
+            "roles": user.roles,
+        }
+    )
 
 
 @app.route("/secure")
@@ -109,11 +110,13 @@ def get_current_user():
 def secure_endpoint():
     """Protected endpoint using decorator."""
     user = g.user
-    return jsonify({
-        "message": f"Hello, {user.full_name or user.email}!",
-        "roles": user.roles,
-        "access_level": "secure",
-    })
+    return jsonify(
+        {
+            "message": f"Hello, {user.full_name or user.email}!",
+            "roles": user.roles,
+            "access_level": "secure",
+        }
+    )
 
 
 @app.route("/admin-only")
@@ -121,16 +124,18 @@ def secure_endpoint():
 def admin_only():
     """Admin-only endpoint with role checking."""
     user = g.user
-    
+
     # Check if user has admin role
     if "Administrator" not in user.roles and "System Manager" not in user.roles:
         return jsonify({"error": "Admin access required"}), 403
-    
-    return jsonify({
-        "message": "Welcome, administrator!",
-        "user": user.email,
-        "roles": user.roles,
-    })
+
+    return jsonify(
+        {
+            "message": "Welcome, administrator!",
+            "user": user.email,
+            "roles": user.roles,
+        }
+    )
 
 
 if __name__ == "__main__":

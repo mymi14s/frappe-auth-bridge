@@ -1,0 +1,138 @@
+name: Publish Python 🐍 distribution 📦 to PyPI and TestPyPI
+
+on:
+  push:
+    branches:
+      - development
+      - production
+  pull_request:
+    branches:
+      - production
+
+jobs:
+  build:
+    name: Build distribution 📦
+    runs-on: ubuntu-latest
+
+    steps:
+      - id: checkout
+        uses: actions/checkout@v4
+
+      - id: setup-python
+        name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.8"
+
+      - id: install-build
+        name: Install build tool
+        run: python3 -m pip install --user build
+
+      - id: build
+        name: Build a binary wheel and a source tarball
+        run: python3 -m build
+
+      - id: upload-artifacts
+        name: Upload distribution artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  publish-to-testpypi:
+    name: Publish to TestPyPI 🧪
+    if: github.ref == 'refs/heads/development' && success()
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/frappe-auth-bridge
+
+    permissions:
+      id-token: write
+
+    steps:
+      - id: download-artifacts
+        name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - id: publish-testpypi
+        name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-to-pypi:
+    name: Publish to PyPI 🚀
+    if: github.ref == 'refs/heads/production' && success()
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: pypi
+      url: https://pypi.org/p/frappe-auth-bridge
+
+    permissions:
+      id-token: write
+
+    steps:
+      - id: download-artifacts
+        name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - id: publish-pypi
+        name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: GitHub Release + Sigstore Signing 🔐
+    if: github.ref == 'refs/heads/production' && success()
+    needs: publish-to-pypi
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - id: download-artifacts
+        name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - id: sigstore-sign
+        name: Sign packages with Sigstore
+        uses: sigstore/gh-action-sigstore-python@v3.0.0
+        with:
+          inputs: |
+            ./dist/*.tar.gz
+            ./dist/*.whl
+
+      - id: get-version
+        name: Extract version from pyproject.toml
+        run: |
+          VERSION=$(grep '^version' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - id: create-release
+        name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.get-version.outputs.version }}" --title "frappe-auth-bridge_${{ steps.get-version.outputs.version }}" --repo "${{ github.repository }}" --notes ""
+
+      - id: upload-to-release
+        name: Upload artifacts to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "v${{ steps.get-version.outputs.version }}" dist/** --repo "${{ github.repository }}"
